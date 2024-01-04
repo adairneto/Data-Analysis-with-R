@@ -1,0 +1,344 @@
+---
+title: "Wrangle"
+output: html_notebook
+---
+
+# Introduction 
+
+Data wrangling: getting the data in a useful form. 
+Parts: import, tidy, transform.
+
+# Tibbles
+
+Tibbles are data frames, but tweaked. 
+
+Old data frames can be converted with 'as_tibble()'.
+
+```{r}
+library(tidyverse)
+as_tibble(iris)
+```
+
+To create a new one, use 'tibble()'.
+
+```{r}
+tibble(
+    x = 1:5,
+    y = 1,
+    z = x ^2 + y
+)
+```
+
+It's possible to have column names that are nonsyntatic, i.e., not variable names.
+
+```{r}
+tb <- tibble(
+    `:)` = "smile",
+    ` ` = "space",
+    `2000` = "number"
+)
+tb
+```
+
+Another way to create is using transposed tibble 'tribble()'.
+
+```{r}
+tribble(
+    ~x, ~y, ~z,
+    #--|--|----
+    "a", 2, 3.6,
+    "b", 1, 8.5
+    )
+```
+
+How does Tibble and data.frame compare? 
+
+1. Printing: tibbles only show the first ten rows and the columns that fit on the screen.
+2. Subsetting: tibbles never do partial matching. 
+
+To view the entire data set, run 'View()'.
+
+```{r}
+import(nycflights13)
+nycflights13::flights %>% 
+    View()
+```
+
+To extract a single variable we use '$' or '[[.]]'.
+
+```{r}
+df <- tibble(
+    x = runif(5),
+    y = rnorm(5)
+)
+# Extract by name
+df$x
+
+df[["x"]]
+
+# Extract by position
+df[[1]]
+```
+
+To use in a pipe, use a placeholder '.':
+
+```{r}
+df %>% .$x
+
+df %>% .[["x"]]
+```
+
+To turn a tibble back into a data.frame, we 'as.data.frame()'. This is useful when dealing with older functions. 
+
+```{r}
+class(as.data.frame(tb))
+```
+
+# Data Import with readr
+
+```{r}
+heights <- read_csv("data/heights.csv")
+```
+
+Imports the first line as column names.
+
+To skip a n lines, we may use the parameter 'skip = n'. Or use 'comment = "#"' to drop all lines that start with #.
+
+If the data doesn't have column names, pass the parameter 'col_names = FALSE'.
+
+To pass column names, we use 'col_names = c("x", "y", "z")'.
+
+To deal with missing values, we may use, for example, 'na = "."'.
+
+The base R offers 'read.csv()', however it is slower, don't produce tibbles and are less reproducible.
+
+## Parsing a Vector
+
+Parse functions, denoted by 'parse_*()', take a character vector and return a more specialized vector (like a logical, integer, or date).
+
+```{r}
+str(parse_logical(c("TRUE", "FALSE", "NA")))
+str(parse_integer(c("1", "2", "3")))
+str(parse_date(c("2010-01-01", "1979-10-14")))
+```
+
+### Numbers
+
+Since numbers are written differently around the world, (like '.' and ',' to separate the integer and fractional parts of a real number), we can use 'locale' with 'parse_double()' to treat this.
+
+```{r}
+parse_double("1,23", locale = locale(decimal_mark = ","))
+```
+
+To deal with symbols such as "%" and "$", we can use 'parse_number()'.
+
+```{r}
+parse_number("$100")
+parse_number("20%")
+parse_number("It cost $123.45")
+```
+
+To remove grouping characters, we also use 'parse_number()'.
+
+```{r}
+parse_number("$123,456,789")
+
+parse_number(
+    "123.456.789",
+    locale = locale(grouping_mark = ".")
+)
+
+parse_number(
+    "123'456'789",
+    locale = locale(grouping_mark = "'")
+)
+```
+
+### Strings
+
+readr uses UTF-8. To deal with other encondings, we use 'parse_character()'.
+
+```{r}
+x1 <- "El Ni\xf1o was particularly bad this year"
+x2 <- "\x82\xb1\x82\xf1\x82\xc9\x82\xbf\x82\xcd"
+parse_character(x1, locale = locale(encoding = "Latin1"))
+parse_character(x2, locale = locale(encoding = "Shift-JIS"))
+```
+
+We can use 'guess_enconding()' to help figure out. 
+
+```{r}
+guess_encoding(charToRaw(x1))
+guess_encoding(charToRaw(x2))
+```
+
+### Factors
+
+To represent categorical values with a known set of possible values, we use factors.
+
+```{r}
+fruit <- c("apple", "banana")
+parse_factor(c("apple", "banana", "bananana"), levels = fruit)
+```
+
+### Date-Times
+
+1. Date: number of days since 1970-01-01
+2. Date-time: number of seconds since 1970-01-01
+3. Time: number of seconds since midnight
+
+Uses ISO8601.
+
+```{r}
+parse_datetime("2010-10-01T2010")
+parse_datetime("20101010")
+parse_date("2010-10-01")
+```
+
+```{r}
+library(hms)
+parse_time("01:10 am")
+parse_time("20:10:01")
+```
+
+If the defaults don't work, make the format explicit (see p. 135-136).
+
+```{r}
+parse_date("01/02/15", "%m/%d/%y")
+parse_date("01/02/15", "%d/%m/%y")
+parse_date("01/02/15", "%y/%m/%d")
+parse_date("1 janvier 2015", "%d %B %Y", locale = locale("fr"))
+```
+
+## Parsing a File
+
+readr tries to figure out the type of each column using 'guess_parser()', but only by reading the first thousand rows. 
+
+A solution: work column by column.
+
+```{r}
+challenge <- read_csv(readr_example("challenge.csv"))
+problems(challenge)
+```
+
+First copy and paste the column specification:
+
+```{r}
+challenge <- read_csv(
+    readr_example("challenge.csv"),
+    col_types = cols(
+        x = col_integer(),
+        y = col_character()
+    )
+)
+```
+
+Then tweak the type of the column x:
+
+```{r}
+challenge <- read_csv(
+    readr_example("challenge.csv"),
+    col_types = cols(
+        x = col_double(),
+        y = col_character()
+    )
+)
+tail(challenge)
+```
+
+Fixing the y column:
+
+```{r}
+challenge <- read_csv(
+    readr_example("challenge.csv"),
+    col_types = cols(
+        x = col_double(),
+        y = col_date()
+    )
+)
+tail(challenge)
+```
+
+Every 'parse_x()' function has a corresponding 'col_x()' function.
+
+An alternative is to change the amount of rows used for the guessing. 
+
+```{r}
+challenge2 <- read_csv(
+                readr_example("challenge.csv"),
+                guess_max = 1001
+            )
+challenge2
+```
+
+Sometimes, it's easier to diagnose problems reading all columns as character vectors.
+
+```{r}
+challenge2 <- read_csv(readr_example("challenge.csv"),
+    col_types = cols(.default = col_character())
+)
+```
+
+If the file is largy, you might set 'n_max' to 10000 or 100000.
+
+If problems persist, read it as a character vector with 'read_lines()' and use string parsing skills.
+
+## Writing to a File
+
+Two functions: 'write_csv()' and 'write_tsv()'. To export a CSV to Excel, use 'write_excel_csv()'.
+
+Always use UTF-8 and ISO8601.
+
+```{r}
+write_csv(challenge, "challenge.csv")
+```
+
+The type information is lost when you save to CSV.
+
+Alternatives: 
+- Use 'write_rds()' and 'read_rds()'. R exclusive.
+- Use the *feather* package with 'write_feather()' and 'read_feather()'. Is usable outside of R.
+
+# Tidy Data with tidyr
+
+```{r}
+
+```
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
